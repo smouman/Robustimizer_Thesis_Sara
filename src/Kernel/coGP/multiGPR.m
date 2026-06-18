@@ -1,10 +1,9 @@
-classdef multiGPR < handle
+classdef multiGPR < matlab.mixin.Copyable
     properties
         Xc
         Xe
         yc
         ye
-        y
 
         Nc
         Ne
@@ -16,7 +15,7 @@ classdef multiGPR < handle
         noise_fix_c
         noise_fix_e
 
-        stab = 1e-4
+        stab = 1e-10
 
         model_low
         mc
@@ -48,7 +47,6 @@ classdef multiGPR < handle
             obj.Xe = Xe;
             obj.yc = yc;
             obj.ye = ye;
-            obj.y  = [yc; ye];
 
             obj.Nc = size(Xc,1);
             obj.Ne = size(Xe,1);
@@ -88,26 +86,26 @@ classdef multiGPR < handle
 
         end
 
-
+        % Low-fidelity model
         function lowreg(obj)
             obj.model_low = GPR(obj.Xc, obj.yc, obj.noise_c, obj.noise_fix_c);
-            obj.model_low.optimize(2);
+            obj.model_low.optimize(10);
 
             [obj.mc, obj.covc] = obj.model_low.inference(obj.Xe);
         end
 
-
+        % RBF covariance matrix
         function K = RBF(obj,hyper,X1,X2)
 
             if nargin < 4
                 X2 = X1;
             end
 
-            sf = hyper(1);
-            ell = hyper(2:end);
+            sf = hyper(1);      %signal variance
+            len_sc = hyper(2:end); %length scale
 
-            X1s = X1 .* ell';
-            X2s = X2 .* ell';
+            X1s = X1 .* len_sc';
+            X2s = X2 .* len_sc';
 
             r = permute(X1s,[1 3 2]) - permute(X2s,[3 1 2]);
 
@@ -120,7 +118,7 @@ classdef multiGPR < handle
             d = obj.dim;
 
             sf_e  = hyper(1);
-            ell_e = hyper(2:d+1);
+            len_sc_e = hyper(2:d+1);
         
             idx = d + 2;
         
@@ -130,7 +128,7 @@ classdef multiGPR < handle
                 sigma_ne = 0;
             end
         
-            theta_e = [sf_e; ell_e(:)];
+            theta_e = [sf_e; len_sc_e(:)];
         
             obj.theta_e = theta_e;
 
@@ -169,7 +167,7 @@ classdef multiGPR < handle
         
                 grad = zeros(length(hyper),1);
         
-                %derivative wrt sf and ell
+                %derivative wrt sf and len_sc
                 for i = 1:length(theta_e)
         
                     dK = obj.kernel_derivative(obj.Xe, theta_e, i);
@@ -189,7 +187,7 @@ classdef multiGPR < handle
         function dK = kernel_derivative(obj, X, hyper, i)
 
             sf = hyper(1);
-            ell = hyper(2:end);
+            len_sc = hyper(2:end);
         
             K = obj.RBF(hyper, X);
         
@@ -205,7 +203,7 @@ classdef multiGPR < handle
         
                 D = (Xi - Xi').^2;
         
-                dK = K .* D / (ell(j)^3);
+                dK = K .* D / (len_sc(j)^3);
             end
         end
 
@@ -280,13 +278,59 @@ classdef multiGPR < handle
             mean = obj.rho * m_low + k_s * alpha;
             
             v = obj.L \ k_s';
+
             var = obj.rho^2 * cov_low + k_ss - (v' * v);
 
             std = sqrt(diag(var));
 
-            if nargin < 4 || ~return_std
-                std = [];
+            % if nargin < 4 || ~return_std
+            %     std = [];
+            % end
+
+            for i = 1:obj.Ne
+
+            x = obj.Xe(i,:);
+        
+            k_s  = obj.RBF(obj.theta_e,x,obj.Xe);
+            k_ss = obj.RBF(obj.theta_e,x,x);
+        
+            v = obj.L \ k_s';
+        
+            vd(i) = k_ss - v'*v;
+
             end
         end
+
+
+        function var_delta = discrepancyVariance(obj,x)
+
+            % k_s  = obj.RBF(obj.theta_e,x,obj.Xe);
+            % k_ss = obj.RBF(obj.theta_e,x,x);
+            % 
+            % v = obj.L \ k_s';
+            % 
+            % var_delta = k_ss - v'*v;
+
+            obj.likelihood(obj.params);
+
+            
+            [m_low, cov_low] = obj.model_low.inference(x);
+            
+            % High-fidelity correction terms
+
+            k_s  = obj.RBF(obj.theta_e, x, obj.Xe);
+            k_ss = obj.RBF(obj.theta_e, x, x);
+            
+            alpha = obj.alpha;
+
+            mean = obj.rho * m_low + k_s * alpha;
+            
+            v = obj.L \ k_s';
+
+            var_delta = obj.rho^2 * cov_low + k_ss - (v' * v);
+
+        end
+     
+
     end
 end
