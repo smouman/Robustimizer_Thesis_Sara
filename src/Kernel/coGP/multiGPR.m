@@ -104,12 +104,8 @@ classdef multiGPR < matlab.mixin.Copyable
             sf = hyper(1);      %signal variance
             len_sc = hyper(2:end); %length scale
 
-            % X1s = X1 .* len_sc';
-            % X2s = X2 .* len_sc';
 
             r = permute((X1 ./ len_sc'),[1 3 2]) - permute(X2 ./ len_sc', [3 1 2]);
-
-            % r = permute(X1s,[1 3 2]) - permute(X2s,[3 1 2]);
 
             K = sf * exp(-0.5 * sum(r.^2,3));
         end
@@ -293,6 +289,20 @@ classdef multiGPR < matlab.mixin.Copyable
             v = obj.L \ k_s';
 
             var = obj.rho^2 * cov_low + k_ss - (v' * v);
+
+        end
+
+        function append(obj, X_new, yL_new, yH_new)
+
+            obj.Xc = [obj.Xc; X_new];
+            obj.yc = [obj.yc; yL_new];
+            obj.Nc = size(obj.Xc,1);
+
+            if nargin == 4
+                obj.Xe = [obj.Xe; X_new];
+                obj.ye = [obj.ye; yH_new];
+                obj.Ne = size(obj.Xe,1);
+            end
 
         end
      
