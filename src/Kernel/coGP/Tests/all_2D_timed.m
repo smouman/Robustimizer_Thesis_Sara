@@ -1,3 +1,6 @@
+% Test performance of GPR, coGPR, multiGPR in 2D case, with timing
+
+
 clear; close all; clc;
 rng(10);
 
@@ -17,12 +20,18 @@ lf = @(x) A*hf(x) + B*(x(:,1)-0.5) - C*(x(:,2)-0.5);
 % TRAINING DATA
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-Nc = 80;
+
+Nc = 40;
 Ne = 10;
 
+% Cheap points
 Xc = rand(Nc,2);
-Xe = rand(Ne,2);
 
+% Select expensive points from cheap points
+idx = randperm(Nc, Ne);
+Xe = Xc(idx,:);
+
+% Evaluate models
 yc = lf(Xc);
 ye = hf(Xe);
 
@@ -41,17 +50,29 @@ true = hf(Xtest);
 % ===================== 1. GPR =====================
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+t_gpr_build = timeit(@() GPR(Xe, ye, [], true));
+
 gpr = GPR(Xe, ye, [], true);
 
 t_gpr_opt = timeit(@() gpr.optimize());
 t_gpr_inf = timeit(@() gpr.inference(Xtest));
 
 [mg, ~] = gpr.inference(Xtest);
-rmse_gpr = sqrt(mean((mg - true).^2));
+
+rmse_gpr = sqrt(mean((mg - true).^2)) / (max(true) - min(true));
+
+
+err = abs(mg - true);
+
+fprintf('RMSE      : %.6f\n', sqrt(mean(err.^2)));
+fprintf('MAX ERROR : %.6f\n', max(err));
+fprintf('MEAN ERROR: %.6f\n', mean(err));
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % ===================== 2. CoGPR =====================
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+t_ck_build = timeit(@() coGPR(Xc, Xe, yc, ye));
 
 ck = coGPR(Xc, Xe, yc, ye);
 
@@ -59,11 +80,20 @@ t_ck_opt = timeit(@() ck.optimize());
 t_ck_inf = timeit(@() ck.inference(Xtest));
 
 [mck, ~] = ck.inference(Xtest);
-rmse_ck = sqrt(mean((mck - true).^2));
+
+rmse_ck = sqrt(mean((mck - true).^2)) / (max(true) - min(true));
+
+err = abs(mck - true);
+
+fprintf('RMSE      : %.6f\n', sqrt(mean(err.^2)));
+fprintf('MAX ERROR : %.6f\n', max(err));
+fprintf('MEAN ERROR: %.6f\n', mean(err));
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % ===================== 3. multiGPR =====================
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+t_mf_build = timeit(@() multiGPR(Xc, Xe, yc, ye));
 
 mf = multiGPR(Xc, Xe, yc, ye);
 
@@ -71,7 +101,14 @@ t_mf_opt = timeit(@() mf.optimize());
 t_mf_inf = timeit(@() mf.inference(Xtest));
 
 [mf_mean, ~] = mf.inference(Xtest);
-rmse_mf = sqrt(mean((mf_mean - true).^2));
+
+rmse_mf = sqrt(mean((mf_mean - true).^2)) / (max(true) - min(true));
+
+err = abs(mf_mean - true);
+
+fprintf('RMSE      : %.6f\n', sqrt(mean(err.^2)));
+fprintf('MAX ERROR : %.6f\n', max(err));
+fprintf('MEAN ERROR: %.6f\n', mean(err));
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % RESHAPE FOR PLOTTING
@@ -123,6 +160,14 @@ fprintf('====================================\n');
 fprintf('GPR       : %.6e\n', rmse_gpr);
 fprintf('CoGPR     : %.6e\n', rmse_ck);
 fprintf('multiGPR  : %.6e\n', rmse_mf);
+
+fprintf('\n====================================\n');
+fprintf('MODEL BUILD TIME (s)\n');
+fprintf('====================================\n');
+
+fprintf('GPR       : %.4f\n', t_gpr_build);
+fprintf('CoGPR     : %.4f\n', t_ck_build);
+fprintf('multiGPR  : %.4f\n', t_mf_build);
 
 fprintf('\n====================================\n');
 fprintf('OPTIMIZATION TIME (s)\n');

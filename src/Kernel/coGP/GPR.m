@@ -81,11 +81,11 @@ classdef GPR < handle
             end
         
             sigma_f = hyper(1);
-            ell = hyper(2:end)';
+            len_sc = hyper(2:end)';
         
             % scale inputs
-            X1s = X1 ./ ell;
-            X2s = X2 ./ ell;
+            X1s = X1 ./ len_sc;
+            X2s = X2 ./ len_sc;
         
             % pairwise squared distances
             K = zeros(size(X1,1), size(X2,1));
@@ -139,7 +139,7 @@ classdef GPR < handle
         % ======================================================
         function optimize(obj, restart)
 
-            if nargin < 2, restart = 3; end
+            if nargin < 2, restart = 10; end
 
             objFun = @(p) obj.likelihood(p);
 

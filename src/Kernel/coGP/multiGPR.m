@@ -28,10 +28,10 @@ classdef multiGPR < matlab.mixin.Copyable
         theta_e
         rho
 
-        K
-        L
         alpha
         NLML
+
+        L 
     end
 
     methods
@@ -82,7 +82,7 @@ classdef multiGPR < matlab.mixin.Copyable
                 obj.bound{end+1} = [1e-6 Inf];
             end
 
-            hyper = [hyper_e];
+            hyper = hyper_e;
 
         end
 
@@ -104,10 +104,12 @@ classdef multiGPR < matlab.mixin.Copyable
             sf = hyper(1);      %signal variance
             len_sc = hyper(2:end); %length scale
 
-            X1s = X1 .* len_sc';
-            X2s = X2 .* len_sc';
+            % X1s = X1 .* len_sc';
+            % X2s = X2 .* len_sc';
 
-            r = permute(X1s,[1 3 2]) - permute(X2s,[3 1 2]);
+            r = permute((X1 ./ len_sc'),[1 3 2]) - permute(X2 ./ len_sc', [3 1 2]);
+
+            % r = permute(X1s,[1 3 2]) - permute(X2s,[3 1 2]);
 
             K = sf * exp(-0.5 * sum(r.^2,3));
         end
@@ -128,30 +130,24 @@ classdef multiGPR < matlab.mixin.Copyable
                 sigma_ne = 0;
             end
         
-            theta_e = [sf_e; len_sc_e(:)];
-        
-            obj.theta_e = theta_e;
-
-            m_low = obj.mc;
+            obj.theta_e = [sf_e; len_sc_e(:)];    
             
             % kernels
-            K = obj.RBF(theta_e, obj.Xe) + eye(obj.Ne)*(sigma_ne^2);
+            K = obj.RBF(obj.theta_e, obj.Xe) + eye(obj.Ne)*(sigma_ne^2);
             L = chol(K + eye(obj.Ne)*obj.stab,'lower');
-        
-            obj.K = K;
-            obj.L = L;
-        
 
-            alpha1 = obj.L'\(obj.L\obj.mc);
-            alpha2 = obj.L'\(obj.L\obj.ye);
+            obj.L = L;
+
+            alpha1 = L'\(L\obj.mc);
+            alpha2 = L'\(L\obj.ye);
 
             obj.rho = (obj.mc' * alpha2) / (obj.mc' * alpha1);
 
-            obj.alpha = obj.L'\(obj.L\(obj.ye - obj.rho*obj.mc));
+            obj.alpha = L'\(L\(obj.ye - obj.rho*obj.mc));
 
             r = obj.ye - obj.rho*obj.mc;
 
-            NLML = sum(log(diag(obj.L))) + ...
+            NLML = sum(log(diag(L))) + ...
                    0.5*(r' * obj.alpha) + ...
                    0.5*obj.Ne*log(2*pi);
 
@@ -168,9 +164,9 @@ classdef multiGPR < matlab.mixin.Copyable
                 grad = zeros(length(hyper),1);
         
                 %derivative wrt sf and len_sc
-                for i = 1:length(theta_e)
+                for i = 1:length(obj.theta_e)
         
-                    dK = obj.kernel_derivative(obj.Xe, theta_e, i);
+                    dK = obj.kernel_derivative(obj.Xe, obj.theta_e, i);
         
                     grad(i) = 0.5 * trace(Q * dK);
                 end
@@ -231,7 +227,7 @@ classdef multiGPR < matlab.mixin.Copyable
             bestP = obj.params;
             
             % Very sensitivite to scale!!!
-            scale = 0.5;
+            scale = 1;
             
             for k = 1:(restart+1)
             
@@ -261,7 +257,7 @@ classdef multiGPR < matlab.mixin.Copyable
             fprintf('Best NLML: %.6f\n', best);
             end
 
-        function [mean,var,std] = inference(obj,x,return_std)
+        function [mean,var,std] = inference(obj,x)
 
             obj.likelihood(obj.params);
 
@@ -272,10 +268,8 @@ classdef multiGPR < matlab.mixin.Copyable
 
             k_s  = obj.RBF(obj.theta_e, x, obj.Xe);
             k_ss = obj.RBF(obj.theta_e, x, x);
-            
-            alpha = obj.alpha;
 
-            mean = obj.rho * m_low + k_s * alpha;
+            mean = obj.rho * m_low + k_s * obj.alpha;
             
             v = obj.L \ k_s';
 
@@ -283,51 +277,22 @@ classdef multiGPR < matlab.mixin.Copyable
 
             std = sqrt(diag(var));
 
-            % if nargin < 4 || ~return_std
-            %     std = [];
-            % end
-
-            for i = 1:obj.Ne
-
-            x = obj.Xe(i,:);
-        
-            k_s  = obj.RBF(obj.theta_e,x,obj.Xe);
-            k_ss = obj.RBF(obj.theta_e,x,x);
-        
-            v = obj.L \ k_s';
-        
-            vd(i) = k_ss - v'*v;
-
-            end
         end
 
-
-        function var_delta = discrepancyVariance(obj,x)
-
-            % k_s  = obj.RBF(obj.theta_e,x,obj.Xe);
-            % k_ss = obj.RBF(obj.theta_e,x,x);
-            % 
-            % v = obj.L \ k_s';
-            % 
-            % var_delta = k_ss - v'*v;
+        function var = variance(obj,x)
 
             obj.likelihood(obj.params);
-
             
-            [m_low, cov_low] = obj.model_low.inference(x);
+            [~, cov_low] = obj.model_low.inference(x);
             
             % High-fidelity correction terms
 
             k_s  = obj.RBF(obj.theta_e, x, obj.Xe);
             k_ss = obj.RBF(obj.theta_e, x, x);
             
-            alpha = obj.alpha;
-
-            mean = obj.rho * m_low + k_s * alpha;
-            
             v = obj.L \ k_s';
 
-            var_delta = obj.rho^2 * cov_low + k_ss - (v' * v);
+            var = obj.rho^2 * cov_low + k_ss - (v' * v);
 
         end
      
