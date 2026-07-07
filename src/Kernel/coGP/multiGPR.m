@@ -2,8 +2,12 @@ classdef multiGPR < matlab.mixin.Copyable
     properties
         Xc
         Xe
+        Xval
+
         yc
         ye
+        ye_val
+        yc_val
 
         Nc
         Ne
@@ -305,7 +309,44 @@ classdef multiGPR < matlab.mixin.Copyable
             end
 
         end
-     
+
+
+        function [fid] = chooseFID(obj)
+
+            % LF surrogate on validation set
+        
+            [mL_val,~] = obj.model_low.inference(obj.Xval);
+        
+            RMSE_L = sqrt(mean((obj.rho*mL_val - obj.ye_val).^2)) / abs(mean(obj.ye_val));
+        
+            delta_true = obj.ye_val - obj.rho*obj.yc_val;
+        
+            % discrepancy prediction
+
+            obj.likelihood(obj.params);
+        
+            k_s  = obj.RBF(obj.theta_e,obj.Xval,obj.Xe);
+        
+            % discrepancy mean
+            delta_pred = k_s * obj.alpha;
+
+            RMSE_D = sqrt(mean((delta_pred - delta_true).^2)) / abs(mean(delta_true));
+        
+            fprintf('RMSE_L    = %.4e\n',RMSE_L);
+            fprintf('RMSE_D = %.4e\n',RMSE_D);
+        
+        
+            % if RMSE_L < 2*RMSE_delta && ...
+            %    RMSE_L > RMSE_delta
+        
+            % add only low-fidelity point
+            % 
+            if RMSE_L > RMSE_D && RMSE_L < 2*RMSE_D
+                fid = 1;
+            else
+                fid = 2;
+            end
+        end
 
     end
 end

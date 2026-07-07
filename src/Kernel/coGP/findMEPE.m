@@ -1,4 +1,4 @@
-function x_new = find_MEPE(obj, bounds, count, plot_graphs)
+function x_new = findMEPE(obj, bounds, count, plot_graphs)
 
 if nargin < 4
         plot_graphs = false;
@@ -54,7 +54,7 @@ x_new = ga(fun, nvars, [], [], [], [], lb, ub, [], opts); % MEPE point found
 
 %% OPTIONAL PLOTTING OF MEPE AND ERROR FUNCTIONS
 
-if obj.dim == 1 && plot_graphs
+if obj.dim == 1 && plot_graphs == 1
     xgrid = linspace(bounds(1), bounds(2), 200);
 
     E = zeros(size(xgrid));
@@ -95,25 +95,129 @@ if obj.dim == 1 && plot_graphs
 
     % Plot separately
 
-    % figure;
-    % plot(xgrid, E, 'LineWidth', 2);
-    % hold on;
-    % xline(x0, '--k', 'Initial guess');
-    % title('MEPE / EPE landscape');
-    % xlabel('x');
-    % ylabel('EPE(x)');
-    % 
-    % figure;
-    % plot(xgrid, V, 'LineWidth', 2);
-    % title('Discrepancy GP Variance');
-    % xlabel('x');
-    % ylabel('\sigma^2(x)');
-    % 
-    % figure;
-    % plot(xgrid, T, 'LineWidth', 2);
-    % title('Discrepancy GP Variance');
-    % xlabel('x');
-    % ylabel('true error');
+    figure;
+    plot(xgrid, E, 'LineWidth', 2);
+    hold on;
+    xline(x0, '--k', 'Initial guess');
+    title('MEPE / EPE landscape');
+    xlabel('x');
+    ylabel('EPE(x)');
+
+    figure;
+    plot(xgrid, V, 'LineWidth', 2);
+    title('Discrepancy GP Variance');
+    xlabel('x');
+    ylabel('\sigma^2(x)');
+
+    figure;
+    plot(xgrid, T, 'LineWidth', 2);
+    title('Discrepancy GP Variance');
+    xlabel('x');
+    ylabel('true error');
+
+end
+
+
+if obj.dim == 2 && plot_graphs == 2
+
+    n = 80;
+
+    x1 = linspace(bounds(1,1), bounds(2,1), n);
+    x2 = linspace(bounds(1,2), bounds(2,2), n);
+
+    [X1,X2] = meshgrid(x1,x2);
+
+    Xgrid = [X1(:), X2(:)];
+
+    E = zeros(size(Xgrid,1),1);
+    V = zeros(size(Xgrid,1),1);
+    T = zeros(size(Xgrid,1),1);
+
+    for i = 1:size(Xgrid,1)
+
+        x = Xgrid(i,:);
+
+        V(i) = obj.variance(x);
+
+        T(i) = e_CV_nearest(obj,e_CV,x);
+
+        E(i) = alpha*T(i) + (1-alpha)*V(i);
+
+    end
+
+    E = reshape(E,n,n);
+    V = reshape(V,n,n);
+    T = reshape(T,n,n);
+
+    %% --------------------------------------------------
+    %% Combined figure
+    %% --------------------------------------------------
+
+    figure
+
+    subplot(1,3,1)
+
+    contourf(X1,X2,E,20,'LineColor','none')
+    hold on
+    scatter(obj.Xe(:,1),obj.Xe(:,2),60,'k','filled')
+    scatter(x_new(1),x_new(2),120,'r','filled')
+    colorbar
+    title('MEPE Criterion')
+
+    subplot(1,3,2)
+
+    contourf(X1,X2,V,20,'LineColor','none')
+    hold on
+    scatter(obj.Xe(:,1),obj.Xe(:,2),60,'k','filled')
+    scatter(x_new(1),x_new(2),120,'r','filled')
+    colorbar
+    title('Variance')
+
+    subplot(1,3,3)
+
+    contourf(X1,X2,T,20,'LineColor','none')
+    hold on
+    scatter(obj.Xe(:,1),obj.Xe(:,2),60,'k','filled')
+    scatter(x_new(1),x_new(2),120,'r','filled')
+    colorbar
+    title('Cross-validation Error')
+
+    %% --------------------------------------------------
+    %% Individual figures
+    %% --------------------------------------------------
+
+    figure
+
+    contourf(X1,X2,E,25,'LineColor','none')
+    hold on
+    scatter(obj.Xe(:,1),obj.Xe(:,2),60,'k','filled')
+    scatter(x_new(1),x_new(2),150,'rp','filled')
+    colorbar
+    title('MEPE Criterion')
+    xlabel('x_1')
+    ylabel('x_2')
+
+    figure
+
+    contourf(X1,X2,V,25,'LineColor','none')
+    hold on
+    scatter(obj.Xe(:,1),obj.Xe(:,2),60,'k','filled')
+    scatter(x_new(1),x_new(2),150,'rp','filled')
+    colorbar
+    title('Variance')
+    xlabel('x_1')
+    ylabel('x_2')
+
+    figure
+
+    contourf(X1,X2,T,25,'LineColor','none')
+    hold on
+    scatter(obj.Xe(:,1),obj.Xe(:,2),60,'k','filled')
+    scatter(x_new(1),x_new(2),150,'rp','filled')
+    colorbar
+    title('LOO Cross-validation Error')
+    xlabel('x_1')
+    ylabel('x_2')
 
 end
 

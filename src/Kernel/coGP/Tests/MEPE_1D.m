@@ -57,7 +57,7 @@ rmse_hist(1) = rmse0;
 for t = 1:n_iter
     
     
-    X_new = findMEPE(model, A, MEPE_q);
+    X_new = findMEPE(model, A, MEPE_q, 1);
 
     y_pred_before = model.inference(Xtest);
 

@@ -41,6 +41,7 @@ model = multiGPR(Xc, Xe, yc, ye, noise_c, false, noise_e, false);
 % =========================
 % test grid (for visualization)
 % =========================
+
 nGrid = 40;
 [x1,x2] = meshgrid(linspace(-1,1,nGrid), linspace(-1,1,nGrid));
 Xtest = [x1(:), x2(:)];
