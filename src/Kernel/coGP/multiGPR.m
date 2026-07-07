@@ -1,10 +1,13 @@
-classdef multiGPR < handle
+classdef multiGPR < matlab.mixin.Copyable
     properties
         Xc
         Xe
+        Xval
+
         yc
         ye
-        y
+        ye_val
+        yc_val
 
         Nc
         Ne
@@ -16,7 +19,7 @@ classdef multiGPR < handle
         noise_fix_c
         noise_fix_e
 
-        stab = 1e-4
+        stab = 1e-10
 
         model_low
         mc
@@ -29,10 +32,10 @@ classdef multiGPR < handle
         theta_e
         rho
 
-        K
-        L
         alpha
         NLML
+
+        L 
     end
 
     methods
@@ -48,7 +51,6 @@ classdef multiGPR < handle
             obj.Xe = Xe;
             obj.yc = yc;
             obj.ye = ye;
-            obj.y  = [yc; ye];
 
             obj.Nc = size(Xc,1);
             obj.Ne = size(Xe,1);
@@ -84,32 +86,30 @@ classdef multiGPR < handle
                 obj.bound{end+1} = [1e-6 Inf];
             end
 
-            hyper = [hyper_e];
+            hyper = hyper_e;
 
         end
 
-
+        % Low-fidelity model
         function lowreg(obj)
             obj.model_low = GPR(obj.Xc, obj.yc, obj.noise_c, obj.noise_fix_c);
-            obj.model_low.optimize(2);
+            obj.model_low.optimize(10);
 
             [obj.mc, obj.covc] = obj.model_low.inference(obj.Xe);
         end
 
-
+        % RBF covariance matrix
         function K = RBF(obj,hyper,X1,X2)
 
             if nargin < 4
                 X2 = X1;
             end
 
-            sf = hyper(1);
-            ell = hyper(2:end);
+            sf = hyper(1);      %signal variance
+            len_sc = hyper(2:end); %length scale
 
-            X1s = X1 .* ell';
-            X2s = X2 .* ell';
 
-            r = permute(X1s,[1 3 2]) - permute(X2s,[3 1 2]);
+            r = permute((X1 ./ len_sc'),[1 3 2]) - permute(X2 ./ len_sc', [3 1 2]);
 
             K = sf * exp(-0.5 * sum(r.^2,3));
         end
@@ -120,7 +120,7 @@ classdef multiGPR < handle
             d = obj.dim;
 
             sf_e  = hyper(1);
-            ell_e = hyper(2:d+1);
+            len_sc_e = hyper(2:d+1);
         
             idx = d + 2;
         
@@ -130,30 +130,24 @@ classdef multiGPR < handle
                 sigma_ne = 0;
             end
         
-            theta_e = [sf_e; ell_e(:)];
-        
-            obj.theta_e = theta_e;
-
-            m_low = obj.mc;
+            obj.theta_e = [sf_e; len_sc_e(:)];    
             
             % kernels
-            K = obj.RBF(theta_e, obj.Xe) + eye(obj.Ne)*(sigma_ne^2);
+            K = obj.RBF(obj.theta_e, obj.Xe) + eye(obj.Ne)*(sigma_ne^2);
             L = chol(K + eye(obj.Ne)*obj.stab,'lower');
-        
-            obj.K = K;
-            obj.L = L;
-        
 
-            alpha1 = obj.L'\(obj.L\obj.mc);
-            alpha2 = obj.L'\(obj.L\obj.ye);
+            obj.L = L;
+
+            alpha1 = L'\(L\obj.mc);
+            alpha2 = L'\(L\obj.ye);
 
             obj.rho = (obj.mc' * alpha2) / (obj.mc' * alpha1);
 
-            obj.alpha = obj.L'\(obj.L\(obj.ye - obj.rho*obj.mc));
+            obj.alpha = L'\(L\(obj.ye - obj.rho*obj.mc));
 
             r = obj.ye - obj.rho*obj.mc;
 
-            NLML = sum(log(diag(obj.L))) + ...
+            NLML = sum(log(diag(L))) + ...
                    0.5*(r' * obj.alpha) + ...
                    0.5*obj.Ne*log(2*pi);
 
@@ -169,10 +163,10 @@ classdef multiGPR < handle
         
                 grad = zeros(length(hyper),1);
         
-                %derivative wrt sf and ell
-                for i = 1:length(theta_e)
+                %derivative wrt sf and len_sc
+                for i = 1:length(obj.theta_e)
         
-                    dK = obj.kernel_derivative(obj.Xe, theta_e, i);
+                    dK = obj.kernel_derivative(obj.Xe, obj.theta_e, i);
         
                     grad(i) = 0.5 * trace(Q * dK);
                 end
@@ -189,7 +183,7 @@ classdef multiGPR < handle
         function dK = kernel_derivative(obj, X, hyper, i)
 
             sf = hyper(1);
-            ell = hyper(2:end);
+            len_sc = hyper(2:end);
         
             K = obj.RBF(hyper, X);
         
@@ -205,7 +199,7 @@ classdef multiGPR < handle
         
                 D = (Xi - Xi').^2;
         
-                dK = K .* D / (ell(j)^3);
+                dK = K .* D / (len_sc(j)^3);
             end
         end
 
@@ -233,7 +227,7 @@ classdef multiGPR < handle
             bestP = obj.params;
             
             % Very sensitivite to scale!!!
-            scale = 0.5;
+            scale = 1;
             
             for k = 1:(restart+1)
             
@@ -263,7 +257,7 @@ classdef multiGPR < handle
             fprintf('Best NLML: %.6f\n', best);
             end
 
-        function [mean,var,std] = inference(obj,x,return_std)
+        function [mean,var,std] = inference(obj,x)
 
             obj.likelihood(obj.params);
 
@@ -274,19 +268,85 @@ classdef multiGPR < handle
 
             k_s  = obj.RBF(obj.theta_e, x, obj.Xe);
             k_ss = obj.RBF(obj.theta_e, x, x);
-            
-            alpha = obj.alpha;
 
-            mean = obj.rho * m_low + k_s * alpha;
+            mean = obj.rho * m_low + k_s * obj.alpha;
             
             v = obj.L \ k_s';
+
             var = obj.rho^2 * cov_low + k_ss - (v' * v);
 
             std = sqrt(diag(var));
 
-            if nargin < 4 || ~return_std
-                std = [];
+        end
+
+        function var = variance(obj,x)
+
+            obj.likelihood(obj.params);
+            
+            [~, cov_low] = obj.model_low.inference(x);
+            
+            % High-fidelity correction terms
+
+            k_s  = obj.RBF(obj.theta_e, x, obj.Xe);
+            k_ss = obj.RBF(obj.theta_e, x, x);
+            
+            v = obj.L \ k_s';
+
+            var = obj.rho^2 * cov_low + k_ss - (v' * v);
+
+        end
+
+        function append(obj, X_new, yL_new, yH_new)
+
+            obj.Xc = [obj.Xc; X_new];
+            obj.yc = [obj.yc; yL_new];
+            obj.Nc = size(obj.Xc,1);
+
+            if nargin == 4
+                obj.Xe = [obj.Xe; X_new];
+                obj.ye = [obj.ye; yH_new];
+                obj.Ne = size(obj.Xe,1);
+            end
+
+        end
+
+
+        function [fid] = chooseFID(obj)
+
+            % LF surrogate on validation set
+        
+            [mL_val,~] = obj.model_low.inference(obj.Xval);
+        
+            RMSE_L = sqrt(mean((obj.rho*mL_val - obj.ye_val).^2)) / abs(mean(obj.ye_val));
+        
+            delta_true = obj.ye_val - obj.rho*obj.yc_val;
+        
+            % discrepancy prediction
+
+            obj.likelihood(obj.params);
+        
+            k_s  = obj.RBF(obj.theta_e,obj.Xval,obj.Xe);
+        
+            % discrepancy mean
+            delta_pred = k_s * obj.alpha;
+
+            RMSE_D = sqrt(mean((delta_pred - delta_true).^2)) / abs(mean(delta_true));
+        
+            fprintf('RMSE_L    = %.4e\n',RMSE_L);
+            fprintf('RMSE_D = %.4e\n',RMSE_D);
+        
+        
+            % if RMSE_L < 2*RMSE_delta && ...
+            %    RMSE_L > RMSE_delta
+        
+            % add only low-fidelity point
+            % 
+            if RMSE_L > RMSE_D && RMSE_L < 2*RMSE_D
+                fid = 1;
+            else
+                fid = 2;
             end
         end
+
     end
 end

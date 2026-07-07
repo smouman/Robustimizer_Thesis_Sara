@@ -81,11 +81,11 @@ classdef GPR < handle
             end
         
             sigma_f = hyper(1);
-            ell = hyper(2:end)';
+            len_sc = hyper(2:end)';
         
             % scale inputs
-            X1s = X1 ./ ell;
-            X2s = X2 ./ ell;
+            X1s = X1 ./ len_sc;
+            X2s = X2 ./ len_sc;
         
             % pairwise squared distances
             K = zeros(size(X1,1), size(X2,1));
@@ -139,7 +139,7 @@ classdef GPR < handle
         % ======================================================
         function optimize(obj, restart)
 
-            if nargin < 2, restart = 3; end
+            if nargin < 2, restart = 10; end
 
             objFun = @(p) obj.likelihood(p);
 
@@ -199,35 +199,19 @@ classdef GPR < handle
             end
         end
 
-        % ======================================================
-        % Plot (1D only)
-        % ======================================================
-        function plot(obj, name, plot_std)
 
-            if obj.dim > 1
-                error('Plot only supports 1D inputs');
-            end
+        function [var] = variance(obj, x)
 
-            x = linspace(min(obj.X), max(obj.X), 100)';
+            k_s  = obj.RBF(obj.theta, x, obj.X);
+            k_ss = obj.RBF(obj.theta, x, x);
 
-            obj.optimize(2);
+            alpha = obj.L'\(obj.L\obj.y);
 
-            [mu,std] = obj.inference(x,true);
+            mean = k_s * alpha;
 
-            figure;
-            hold on;
+            v = obj.L\k_s';
+            var = k_ss - v'*v;
 
-            plot(x, mu, '--', 'LineWidth', 2);
-            scatter(obj.X, obj.y, 40, 'filled');
-
-            if plot_std
-                fill([x; flipud(x)], ...
-                     [mu-2*std; flipud(mu+2*std)], ...
-                     'b','FaceAlpha',0.2,'EdgeColor','none');
-            end
-
-            title(['GPR - ', name]);
-            xlabel('x'); ylabel('y');
         end
 
     end
